@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use strict;
 use Carp;
 use LWP::UserAgent;
-use HTML::Form;
+use URI;
 use JSON;
 
 =head1 NAME
@@ -78,7 +78,7 @@ sub new {
   return bless {
     username  => $options{username},
     password  => $options{password},
-    loginurl  => $options{loginurl} || 'https://sso.garmin.com/sso/login?service=http%3A%2F%2Fconnect.garmin.com%2Fpost-auth%2Flogin&webhost=olaxpw-connect09.garmin.com&source=http%3A%2F%2Fconnect.garmin.com%2Fen-US%2Fsignin&redirectAfterAccountLoginUrl=http%3A%2F%2Fconnect.garmin.com%2Fpost-auth%2Flogin&redirectAfterAccountCreationUrl=http%3A%2F%2Fconnect.garmin.com%2Fpost-auth%2Flogin&gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso&locale=en&id=gauth-widget&cssUrl=https%3A%2F%2Fstatic.garmincdn.com%2Fcom.garmin.connect%2Fui%2Fsrc-css%2Fgauth-custom.css&clientId=GarminConnect&rememberMeShown=true&rememberMeChecked=false&createAccountShown=true&openCreateAccount=false&usernameShown=true&displayNameShown=false&consumeServiceTicket=false&initialFocus=true&embedWidget=false',
+    loginurl  => $options{loginurl} || 'https://sso.garmin.com/sso/login',
     searchurl => $options{searchurl} || 'http://connect.garmin.com/proxy/activity-search-service-1.0/json/activities',
   }, $self;
 }
@@ -94,30 +94,55 @@ sub _login {
   push @{ $ua->requests_redirectable }, 'POST';
 
   # Retrieve the login page
-  my $request = HTTP::Request->new(GET => $self->{loginurl});
-  my $response = $ua->request($request);
-  croak "Can't retrieve login form: " . $response->status_line
+  my %params = (
+    service  => "https://connect.garmin.com/post-auth/login",
+    clientId => "GarminConnect",
+    consumeServiceTicket => "false",
+  );
+  my $uri = URI->new($self->{loginurl});
+  $uri->query_form(%params);
+  my $response = $ua->get($uri);
+  croak "Can't retrieve login page: " . $response->status_line
     unless $response->is_success;
+  my $lt_value;
+  foreach my $line ( split /\n+/, $response->as_string ) {
+    if ( $line =~ /name=\"lt\"\s+value=\"([^\"]+)\"/ ) {
+      $lt_value = $1;
+      last;
+    }
+  }
+  if( !defined $lt_value ) {
+    croak "didn't find \"lt\" name/value pair in response";
+  }
 
-  # Fill out the login form
-  my $form = HTML::Form->parse($response->content, $self->{loginurl});
-  croak "Couldn't find login form" unless defined $form;
-  $form->value('username' => $self->{username});
-  $form->value('password' => $self->{password});
-
-  # Submit the form and try to log in
-  $response = $ua->request($form->click);
-  croak "Can't submit login form: " . $response->status_line
+  # Get sso ticket
+  $uri = URI->new("https://sso.garmin.com/sso/login");
+  $uri->query_form(%params);
+  $response = $ua->post($uri, {
+    username => $self->{username},
+    password => $self->{password},
+    _eventId => "submit",
+    embed    => "true",
+    lt       => $lt_value,
+  });
+  croak "Can't retrieve sso page: " . $response->status_line
     unless $response->is_success;
+  my $ticket_value;
+  foreach my $line ( split /\n+/, $response->as_string ) {
+    if ( $line =~ /ticket=([^']+)'/ ) {
+      $ticket_value = $1;
+      last;
+    }
+  }
+  if( !defined $ticket_value ) {
+    croak "didn't find ticket value in response";
+  }
 
-  # Get post-auth page
-  $request = HTTP::Request->new(GET => 'http://connect.garmin.com/post-auth/login');
-  $response = $ua->request($request);
+  $uri = URI->new('https://connect.garmin.com/post-auth/login');
+  $uri->query_form(ticket => $ticket_value);
+  $response = $ua->get($uri);
   croak "Can't retrieve post-auth page: " . $response->status_line
     unless $response->is_success;
-
-  # for debugging, print the post-login page
-  #print $response->content;
 
   # Record our logged-in status so future calls will skip login.
   $self->{useragent} = $ua;
