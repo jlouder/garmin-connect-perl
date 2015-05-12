@@ -23,14 +23,14 @@ our $VERSION = '1.0.1';
 
 =head1 SYNOPSIS
 
-With WebService::GarminConect, you can search the activities stored on the
+With WebService::GarminConnect, you can search the activities stored on the
 Garmin Connect site.
 
     use WebService::GarminConnect;
 
     my $gc = WebService::GarminConnect->new( username => 'myuser',
                                              password => 'password' );
-    my $activities = $gc->search( -limit => 20 );
+    my $activities = $gc->search( limit => 20 );
     foreach my $a ( @{$activities} ) {
       my $name = $a->{name};
       ...
