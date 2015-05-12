@@ -14,11 +14,11 @@ WebService::GarminConnect - Access data from Garmin Connect
 
 =head1 VERSION
 
-Version 1.0.0
+Version 1.0.1
 
 =cut
 
-our $VERSION = '1.0.0';
+our $VERSION = '1.0.1';
 
 
 =head1 SYNOPSIS
@@ -257,6 +257,10 @@ L<http://cpanratings.perl.org/d/WebService-GarminConnect>
 =item * Search CPAN
 
 L<http://search.cpan.org/dist/WebService-GarminConnect>
+
+=item * GitHub Repository
+
+L<https://github.com/jlouder/garmin-connect-perl>
 
 =back
 
