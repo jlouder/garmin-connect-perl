@@ -151,8 +151,14 @@ are specified, returns all the user's activities. Possible criteria:
 
 =item limit
 
-The maximum number of activities to return. If not specified, there is no
-limit.
+(Optional) The maximum number of activities to return. If not specified,
+all the user's activities will be returned.
+
+=item pagesize
+
+(Optional) The number of activities to return in each call to Garmin
+Connect. (One call to this subroutine may call Garmin Connect several
+times to retrieve all the requested activities.) Defaults to 50.
 
 =back
 
@@ -172,21 +178,32 @@ sub activities {
   # requests, along with the current "page" number.
   my @activities;
   my $start = 0;
-  my $activities_per_request = 50; 
+  my $pagesize = 50;
+  if( defined $opts{pagesize} ) {
+    if( $opts{pagesize} > 0 && $opts{pagesize} < 50 ) {
+      $pagesize = $opts{pagesize};
+    }
+  }
   my $activities_to_retrieve;
 
   # Special case when the limit is smaller than one page.
   if( defined $opts{limit} ) {
-    if( $opts{limit} < $activities_per_request ) {
+    if( $opts{limit} < $pagesize ) {
       $activities_to_retrieve = $opts{limit};
-      $activities_per_request = $opts{limit};
+      $pagesize = $opts{limit};
     }
   }
 
   do {
     # Make a search request
+    if( defined $activities_to_retrieve ) {
+      my $remaining = $activities_to_retrieve - @activities;
+      if( $remaining < $pagesize ) {
+        $pagesize = $remaining;
+      }
+    }
     my $searchurl = $self->{searchurl} .
-      "?start=$start&limit=$activities_per_request";
+      "?start=$start&limit=$pagesize";
 
     my $request = HTTP::Request->new(GET => $searchurl);
     my $response = $ua->request($request);
@@ -200,6 +217,7 @@ sub activities {
       # On the first request, set the total to retrieve based on
       # the total available and the optional limit.
       $activities_to_retrieve = $data->{results}->{search}->{totalFound};
+      $self->{total_activities} = $data->{results}->{search}->{totalFound};
       if( defined $opts{limit} ) {
         # Retrieve the lesser of what's available or the limit.
         if( $opts{limit} < $activities_to_retrieve ) {
