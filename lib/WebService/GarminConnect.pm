@@ -23,8 +23,8 @@ Garmin Connect site.
 
     my $gc = WebService::GarminConnect->new( username => 'myuser',
                                              password => 'password' );
-    my $activities = $gc->search( limit => 20 );
-    foreach my $a ( @{$activities} ) {
+    my @activities = $gc->activities( limit => 20 );
+    foreach my $a ( @activities ) {
       my $name = $a->{name};
       ...
     }
