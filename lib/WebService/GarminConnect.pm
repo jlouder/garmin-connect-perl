@@ -175,6 +175,14 @@ sub activities {
   my $activities_per_request = 50; 
   my $activities_to_retrieve;
 
+  # Special case when the limit is smaller than one page.
+  if( defined $opts{limit} ) {
+    if( $opts{limit} < $activities_per_request ) {
+      $activities_to_retrieve = $opts{limit};
+      $activities_per_request = $opts{limit};
+    }
+  }
+
   do {
     # Make a search request
     my $searchurl = $self->{searchurl} .
