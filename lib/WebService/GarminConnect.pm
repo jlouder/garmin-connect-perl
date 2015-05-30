@@ -239,7 +239,7 @@ sub activities {
 
 =head1 AUTHOR
 
-Joel Loudermilk, C<< <jlouder at cpan.org> >>
+Joel Loudermilk, C<< <joel at loudermilk.org> >>
 
 =head1 BUGS
 
@@ -258,10 +258,6 @@ You can find documentation for this module with the perldoc command.
 You can also look for information at:
 
 =over 4
-
-=item * RT: CPAN's request tracker
-
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=WebService-GarminConnect>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
