@@ -88,8 +88,9 @@ sub _login {
 
   # Retrieve the login page
   my %params = (
-    service  => "https://connect.garmin.com/post-auth/login",
-    clientId => "GarminConnect",
+    service   => "https://connect.garmin.com/post-auth/login",
+    gauthHost => "https://sso.garmin.com/sso",
+    clientId  => "GarminConnect",
     consumeServiceTicket => "false",
   );
   my $uri = URI->new($self->{loginurl});
