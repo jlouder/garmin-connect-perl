@@ -191,7 +191,10 @@ sub activities {
     my $searchurl = $self->{searchurl} .
       "?start=$start&limit=$pagesize";
 
-    my $request = HTTP::Request->new(GET => $searchurl);
+    my $headers = [
+      'NK' => 'NT',
+    ];
+    my $request = HTTP::Request->new('GET', $searchurl, $headers);
     my $response = $ua->request($request);
     croak "Can't make search request: " . $response->status_line
       unless $response->is_success;
