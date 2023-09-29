@@ -8,6 +8,8 @@ use LWP::UserAgent;
 use URI;
 use JSON;
 use Data::Dumper;
+use WWW::OAuth;
+#use LWP::ConsoleLogger::Everywhere ();
 
 # VERSION
 
@@ -72,7 +74,7 @@ sub new {
   return bless {
     username  => $options{username},
     password  => $options{password},
-    loginurl  => $options{loginurl} || 'https://sso.garmin.com/sso/signin',
+    loginurl  => $options{loginurl} || 'https://sso.garmin.com/portal/sso/en-US/signin',
     searchurl => $options{searchurl} || 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities',
   }, $self;
 }
@@ -83,29 +85,111 @@ sub _login {
   # Bail out if we're already logged in.
   return if defined $self->{is_logged_in};
 
-  my $ua = LWP::UserAgent->new(agent => 'Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko');
+  my $ua = LWP::UserAgent->new(agent => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) ' .
+                                        'AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148');
   $ua->cookie_jar( {} );
   push @{ $ua->requests_redirectable }, 'POST';
 
-  # Retrieve the login page
-  my %params = (
-    service   => "https://connect.garmin.com/post-auth/login",
-    gauthHost => "https://sso.garmin.com/sso",
-    clientId  => "GarminConnect",
-    consumeServiceTicket => "false",
+  my %sso_embed_params = (
+    id          => 'gauth-widget',
+    embedWidget => 'true',
+    gauthHost   => 'https://sso.garmin.com/sso',
   );
-  my $uri = URI->new($self->{loginurl});
-  $uri->query_form(%params);
+  my $uri = URI->new('https://sso.garmin.com/sso/embed');
+  $uri->query_form(%sso_embed_params);
   my $response = $ua->get($uri);
+  croak "Can't retrieve /sso/embed: " . $response->status_line
+    unless $response->is_success;
+
+  my %signin_params = (
+    id                              => 'gauth-widget',
+    embedWidget                     => 'true',
+    gauthHost                       => 'https://sso.garmin.com/sso/embed',
+    service                         => 'https://sso.garmin.com/sso/embed',
+    source                          => 'https://sso.garmin.com/sso/embed',
+    redirectAfterAccountLoginUrl    => 'https://sso.garmin.com/sso/embed',
+    redirectAfterAccountCreationUrl => 'https://sso.garmin.com/sso/embed',
+  );
+  $uri = URI->new('https://sso.garmin.com/sso/signin');
+  $uri->query_form(%signin_params);
+  $response = $ua->get($uri);
+  croak "Can't retrieve /sso/signin: " . $response->status_line
+    unless $response->is_success;
+  # get the CSRF token from the response, it's a hidden form field
+  my $csrf_token;
+  if ($response->decoded_content =~ /name="_csrf"\s+value="(.+)"/) {
+    $csrf_token = $1;
+  } else {
+    croak "couldn't find CSRF token";
+  }
+
+  # submit login form with email and password
+  $response = $ua->post($uri, Referer => "$uri", Content => {
+    username => $self->{username},
+    password => $self->{password},
+    embed    => 'true',
+    _csrf    => $csrf_token,
+  });
+  croak "Can't submit login  page: " . $response->status_line
+    unless $response->is_success;
+  my $title;
+  if ($response->decoded_content =~ m:<title>(.+)</title>:) {
+    $title = $1;
+  } else {
+    croak "couldn't find <title> in login response";
+  }
+  if ($title ne 'Success') {
+    croak "expected post-login <title> of \"Success\", not \"$title\"";
+  }
+  my $ticket;
+  if ($response->decoded_content =~ /embed\?ticket=([^"]+)"/) {
+    $ticket = $1;
+  } else {
+    croak "couldn't find ticket in login response";
+  }
+
+  # get oauth1 token
+  my $oauth = WWW::OAuth->new(
+    client_id => "fc3e99d2-118c-44b8-8ae3-03370dde24c0",
+    client_secret => "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF",
+  );
+
+
+  $uri = 'https://connectapi.garmin.com/oauth-service/oauth/' .
+         "preauthorized?ticket=$ticket&login-url=" .
+         'https://sso.garmin.com/sso/embed&accepts-mfa-tokens=true';
+  $ua->add_handler(request_prepare => sub { $oauth->authenticate($_[0]) });
+  $response = $ua->get($uri);
+  croak "Can't retrieve oauth1 page: " . $response->status_line
+    unless $response->is_success;
+
+  croak $response->decoded_content;
+
+
+  ## old stuff
+
+  # Retrieve the login page
+  my %login_params = (
+    service   => "https://connect.garmin.com/modern",
+    clientId  => "GarminConnect",
+  );
+  $uri = URI->new($self->{loginurl});
+  $uri->query_form(%login_params);
+  $response = $ua->get($uri);
   croak "Can't retrieve login page: " . $response->status_line
     unless $response->is_success;
 
   # Get sso ticket
+  my %sso_params = (
+    service   => "https://connect.garmin.com/modern",
+    clientId  => "GarminConnect",
+    locale    => "en-US",
+  );
   $uri = URI->new("https://sso.garmin.com/sso/login");
-  $uri->query_form(%params);
+  $uri->query_form(%sso_params);
   $response = $ua->post($uri, origin => 'https://sso.garmin.com',
     content => {
-      username => $self->{username},
+      email    => $self->{username},
       password => $self->{password},
       _eventId => "submit",
       embed    => "true",
@@ -124,7 +208,7 @@ sub _login {
   if ($response->content !~ /\?ticket=([^"]+)"/) {
     croak "no service ticket in response";
   }
-  my $ticket=$1;
+  $ticket=$1;
 
   #$uri = URI->new('https://connect.garmin.com/post-auth/login?ticket=$1');
   $uri = URI->new("https://connect.garmin.com/modern/?ticket=$ticket");
@@ -193,6 +277,9 @@ sub activities {
 
     my $headers = [
       'NK' => 'NT',
+      'X-app-ver' => '4.71.1.4',
+      'X-lang' => 'en-US',
+      'X-Requested-With' => 'XMLHttpRequest',
     ];
     my $request = HTTP::Request->new('GET', $searchurl, $headers);
     my $response = $ua->request($request);
