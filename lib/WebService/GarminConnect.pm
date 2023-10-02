@@ -144,7 +144,9 @@ sub _login {
     croak "couldn't find ticket in login response";
   }
 
-  # get oauth1 token
+  # get oauth1 token, these came from https://thegarth.s3.amazonaws.com/oauth_consumer.json
+  # and are what the Garmin Connect mobile app uses. Perhaps we should
+  # try to fetch these from there at runtime in case they ever change?
   my $oauth = WWW::OAuth->new(
     client_id => "fc3e99d2-118c-44b8-8ae3-03370dde24c0",
     client_secret => "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF",
