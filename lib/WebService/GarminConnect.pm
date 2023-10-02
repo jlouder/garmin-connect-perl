@@ -325,7 +325,7 @@ L<https://github.com/jlouder/garmin-connect-perl>
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2015 Joel Loudermilk.
+Copyright 2023 Joel Loudermilk.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
