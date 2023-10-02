@@ -9,6 +9,7 @@ use URI;
 use JSON;
 use Data::Dumper;
 use WWW::OAuth;
+use WWW::OAuth::Util qw( form_urldecode );
 #use LWP::ConsoleLogger::Everywhere ();
 
 # VERSION
@@ -49,10 +50,6 @@ specified:
 
 (Required) The user's Garmin Connect password.
 
-=item loginurl
-
-(Optional) Override the default login URL for Garmin Connect.
-
 =item searchurl
 
 (Optional) Override the default search URL for Garmin Connect.
@@ -74,8 +71,7 @@ sub new {
   return bless {
     username  => $options{username},
     password  => $options{password},
-    loginurl  => $options{loginurl} || 'https://sso.garmin.com/portal/sso/en-US/signin',
-    searchurl => $options{searchurl} || 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities',
+    searchurl => $options{searchurl} || 'https://connectapi.garmin.com/activitylist-service/activities/search/activities',
   }, $self;
 }
 
@@ -162,59 +158,32 @@ sub _login {
   $response = $ua->get($uri);
   croak "Can't retrieve oauth1 page: " . $response->status_line
     unless $response->is_success;
+  my %response_data = @{form_urldecode($response->content)};
+  foreach my $key ( qw( oauth_token oauth_token_secret ) ) {
+    if (!defined $response_data{$key}) {
+      croak "oauth response didn't include \"$key\"";
+    }
+  }
+  $oauth->token($response_data{oauth_token});
+  $oauth->token_secret($response_data{oauth_token_secret});
 
-  croak $response->decoded_content;
-
-
-  ## old stuff
-
-  # Retrieve the login page
-  my %login_params = (
-    service   => "https://connect.garmin.com/modern",
-    clientId  => "GarminConnect",
-  );
-  $uri = URI->new($self->{loginurl});
-  $uri->query_form(%login_params);
-  $response = $ua->get($uri);
-  croak "Can't retrieve login page: " . $response->status_line
+  $uri = 'https://connectapi.garmin.com/oauth-service/oauth/exchange/user/2.0';
+  $response = $ua->post($uri);
+  croak "Can't retrieve oauth1 page: " . $response->status_line
     unless $response->is_success;
+  my $response_data = decode_json($response->content);
+  if (!defined $response_data->{access_token}) {
+    croak "couldn't find access token in response";
+  }
 
-  # Get sso ticket
-  my %sso_params = (
-    service   => "https://connect.garmin.com/modern",
-    clientId  => "GarminConnect",
-    locale    => "en-US",
-  );
-  $uri = URI->new("https://sso.garmin.com/sso/login");
-  $uri->query_form(%sso_params);
-  $response = $ua->post($uri, origin => 'https://sso.garmin.com',
-    content => {
-      email    => $self->{username},
-      password => $self->{password},
-      _eventId => "submit",
-      embed    => "true",
-  });
-  croak "Can't retrieve sso page: " . $response->status_line
-    unless $response->is_success;
-  if ($response->content =~ />sendEvent\('FAIL'\)/) {
-    croak "invalid login";
-  }
-  if ($response->content =~ />sendEvent\('ACCOUNT_LOCKED'\)/) {
-    croak "account locked";
-  }
-  if ($response->content =~ /renewPassword/) {
-    croak "renew password";
-  }
-  if ($response->content !~ /\?ticket=([^"]+)"/) {
-    croak "no service ticket in response";
-  }
-  $ticket=$1;
+  # make subsequent calls use the access token in the Authorization header
+  $ua->remove_handler('request_prepare');
+  $ua->default_header('Authorization', 'Bearer ' . $response_data->{access_token});
 
-  #$uri = URI->new('https://connect.garmin.com/post-auth/login?ticket=$1');
-  $uri = URI->new("https://connect.garmin.com/modern/?ticket=$ticket");
-  $response = $ua->get($uri);
-  croak "Can't retrieve post-auth page: " . $response->status_line
-    unless $response->is_success;
+  #$uri = 'https://connectapi.garmin.com/activitylist-service/activities/search/activities?limit=20&start=0';
+  #$response = $ua->get($uri);
+  #croak "Can't retrieve activity search  page: " . $response->status_line
+  #  unless $response->is_success;
 
   # Record our logged-in status so future calls will skip login.
   $self->{useragent} = $ua;
