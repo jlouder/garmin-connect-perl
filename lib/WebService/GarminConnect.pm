@@ -86,6 +86,28 @@ sub _login {
   $ua->cookie_jar( {} );
   push @{ $ua->requests_redirectable }, 'POST';
 
+  # location for saved access token
+  my $cache_path = (getpwuid($>))[7]."/.cache";
+  -d $cache_path || mkdir $cache_path, 0700;
+	$cache_path .= "/webservice-garminconnect";
+  -d $cache_path || mkdir $cache_path, 0700;
+  # untaint
+  $self->{username} =~ m/([a-z0-9+\-_.=\?@]+)/i;
+  $cache_path .= "/${1}_oauth";
+
+  # try saved access token
+  if (open my $cache_fh, '<', $cache_path) {
+		(my $access_token = <$cache_fh>) =~ s/\s+//;
+
+	  $ua->default_header('Authorization', 'Bearer ' . $access_token);
+    $self->{useragent} = $ua;
+    $self->{is_logged_in} = 1;
+
+    # simple api call to validate
+		eval { $self->profile };
+    return unless $@;
+	}
+
   my %sso_embed_params = (
     id          => 'gauth-widget',
     embedWidget => 'true',
@@ -113,7 +135,7 @@ sub _login {
     unless $response->is_success;
   # get the CSRF token from the response, it's a hidden form field
   my $csrf_token;
-  if ($response->decoded_content =~ /name="_csrf"\s+value="(.+)"/) {
+  if ($response->decoded_content =~ /name="_csrf"\s+value="(.+?)"/) {
     $csrf_token = $1;
   } else {
     croak "couldn't find CSRF token";
@@ -180,7 +202,8 @@ sub _login {
 
   # make subsequent calls use the access token in the Authorization header
   $ua->remove_handler('request_prepare');
-  $ua->default_header('Authorization', 'Bearer ' . $response_data->{access_token});
+  my $access_token = $response_data->{access_token};
+  $ua->default_header('Authorization', 'Bearer ' . $access_token);
 
   #$uri = 'https://connectapi.garmin.com/activitylist-service/activities/search/activities?limit=20&start=0';
   #$response = $ua->get($uri);
@@ -190,6 +213,53 @@ sub _login {
   # Record our logged-in status so future calls will skip login.
   $self->{useragent} = $ua;
   $self->{is_logged_in} = 1;
+
+  # save access token
+  if (open my $cache_fh, '>', $cache_path) {
+    chmod 0600, $cache_fh;
+    print $cache_fh $access_token, "\n";
+		close $cache_fh;
+  }
+}
+
+sub _api {
+  my $self = shift;
+  my ($api, %opts) = @_;
+  my $json = JSON->new();
+
+  # Ensure we are logged in
+  $self->_login();
+  my $ua = $self->{useragent};
+
+  my $url = URI->new($self->{searchurl});
+	$url->path($api);
+  $url->query_form(%opts);
+
+  my $headers = [
+    'NK' => 'NT',
+    'X-app-ver' => '4.71.1.4',
+    'X-lang' => 'en-US',
+    'X-Requested-With' => 'XMLHttpRequest',
+  ];
+  my $request = HTTP::Request->new('GET', $url, $headers);
+  my $response = $ua->request($request);
+  croak "Can't make $api request: " . $response->status_line
+    unless $response->is_success;
+
+  return $json->decode($response->content);
+}
+
+=head2 profile
+
+Returns the user's Garmin Connect profile
+
+=back
+
+=cut
+
+sub profile {
+  my $self = shift;
+  return $self->_api("/userprofile-service/socialProfile");
 }
 
 =head2 activities( %search_criteria )
@@ -243,22 +313,7 @@ sub activities {
   my $data = [];
   do {
     # Make a search request
-    my $searchurl = $self->{searchurl} .
-      "?start=$start&limit=$pagesize";
-
-    my $headers = [
-      'NK' => 'NT',
-      'X-app-ver' => '4.71.1.4',
-      'X-lang' => 'en-US',
-      'X-Requested-With' => 'XMLHttpRequest',
-    ];
-    my $request = HTTP::Request->new('GET', $searchurl, $headers);
-    my $response = $ua->request($request);
-    croak "Can't make search request: " . $response->status_line
-      unless $response->is_success;
-
-    # Parse the JSON search results
-    $data = $json->decode($response->content);
+    $data = $self->_api("/activitylist-service/activities/search/activities", start => $start, limit => $pagesize);
 
     # Add this set of activities to the list.
     foreach my $activity ( @{$data} ) {
