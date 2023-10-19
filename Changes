@@ -1,5 +1,9 @@
 Revision history for WebService-GarminConnect
 
+1.1.1   2023-10-19
+        - Cache the Garmin API access token (thanks noduck!)
+        - Add a CONTRIBUTORS file
+
 1.1.0   2023-10-02
         - Switch to the backend Garmin API, inspired by https://github.com/matin/garth
 
