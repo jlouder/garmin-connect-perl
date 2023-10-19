@@ -89,7 +89,7 @@ sub _login {
   # location for saved access token
   my $cache_path = (getpwuid($>))[7]."/.cache";
   -d $cache_path || mkdir $cache_path, 0700;
-	$cache_path .= "/webservice-garminconnect";
+  $cache_path .= "/webservice-garminconnect";
   -d $cache_path || mkdir $cache_path, 0700;
   # untaint
   $self->{username} =~ m/([a-z0-9+\-_.=\?@]+)/i;
@@ -97,16 +97,16 @@ sub _login {
 
   # try saved access token
   if (open my $cache_fh, '<', $cache_path) {
-		(my $access_token = <$cache_fh>) =~ s/\s+//;
+    (my $access_token = <$cache_fh>) =~ s/\s+//;
 
-	  $ua->default_header('Authorization', 'Bearer ' . $access_token);
+    $ua->default_header('Authorization', 'Bearer ' . $access_token);
     $self->{useragent} = $ua;
     $self->{is_logged_in} = 1;
 
     # simple api call to validate
-		eval { $self->profile };
+    eval { $self->profile };
     return unless $@;
-	}
+  }
 
   my %sso_embed_params = (
     id          => 'gauth-widget',
@@ -218,7 +218,7 @@ sub _login {
   if (open my $cache_fh, '>', $cache_path) {
     chmod 0600, $cache_fh;
     print $cache_fh $access_token, "\n";
-		close $cache_fh;
+    close $cache_fh;
   }
 }
 
