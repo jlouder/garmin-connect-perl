@@ -50,6 +50,11 @@ specified:
 
 (Required) The user's Garmin Connect password.
 
+=item cache_dir
+
+(Optional) Directory where the user's authentication token will be cached.
+If not specified, defaults to $HOME/.cache/webservice-garminconnect.
+
 =item searchurl
 
 (Optional) Override the default search URL for Garmin Connect.
@@ -71,6 +76,7 @@ sub new {
   return bless {
     username  => $options{username},
     password  => $options{password},
+    cache_dir => $options{cache_dir},
     searchurl => $options{searchurl} || 'https://connectapi.garmin.com/activitylist-service/activities/search/activities',
   }, $self;
 }
@@ -87,10 +93,13 @@ sub _login {
   push @{ $ua->requests_redirectable }, 'POST';
 
   # location for saved access token
-  my $cache_path = (getpwuid($>))[7]."/.cache";
-  -d $cache_path || mkdir $cache_path, 0700;
-  $cache_path .= "/webservice-garminconnect";
-  -d $cache_path || mkdir $cache_path, 0700;
+  my $cache_path = $self->{cache_dir};
+  if (!defined $cache_path) {
+    $cache_path = (getpwuid($>))[7]."/.cache";
+    -d $cache_path || mkdir $cache_path, 0700;
+    $cache_path .= "/webservice-garminconnect";
+    -d $cache_path || mkdir $cache_path, 0700;
+  }
   # untaint
   $self->{username} =~ m/([a-z0-9+\-_.=\?@]+)/i;
   $cache_path .= "/${1}_oauth";
@@ -252,8 +261,6 @@ sub _api {
 =head2 profile
 
 Returns the user's Garmin Connect profile
-
-=back
 
 =cut
 
