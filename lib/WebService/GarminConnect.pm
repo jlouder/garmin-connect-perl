@@ -230,17 +230,16 @@ sub _login {
   }
 }
 
-sub _api {
+sub _api_raw {
   my $self = shift;
   my ($api, %opts) = @_;
-  my $json = JSON->new();
 
   # Ensure we are logged in
   $self->_login();
   my $ua = $self->{useragent};
 
   my $url = URI->new($self->{searchurl});
-	$url->path($api);
+  $url->path($api);
   $url->query_form(%opts);
 
   my $headers = [
@@ -254,7 +253,14 @@ sub _api {
   croak "Can't make $api request: " . $response->status_line
     unless $response->is_success;
 
-  return $json->decode($response->content);
+  return $response;
+}
+
+sub _api {
+  my $self = shift;
+  my ($api, %opts) = @_;
+  my $json = JSON->new();
+  return $json->decode($self->_api_raw($api, %opts)->content());
 }
 
 =head2 profile
